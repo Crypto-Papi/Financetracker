@@ -153,13 +153,45 @@ function App() {
     return () => unsubscribe()
   }, [])
 
-  // Load transactions from Firestore with real-time updates
+  // Load transactions from localStorage on mount (for dev mode)
   useEffect(() => {
+    if (!db) {
+      // Load from localStorage in dev mode
+      const savedData = localStorage.getItem('finance-tracker-transactions')
+      if (savedData) {
+        try {
+          const parsed = JSON.parse(savedData)
+          setTransactions(parsed)
+          console.log('Loaded transactions from localStorage:', parsed.length, 'transactions')
+        } catch (error) {
+          console.error('Error loading from localStorage:', error)
+        }
+      }
+      setLoading(false)
+    }
+  }, [])
+
+  // Load transactions from localStorage on mount
+  useEffect(() => {
+    const loadFromLocalStorage = () => {
+      try {
+        const saved = localStorage.getItem('finance-tracker-transactions')
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          setTransactions(parsed)
+          console.log('Loaded transactions from localStorage:', parsed.length)
+        }
+      } catch (error) {
+        console.error('Error loading from localStorage:', error)
+      }
+      setLoading(false)
+    }
+
     if (!userId) return
 
-    // If Firebase is not configured, use local state
+    // If Firebase is not configured, load from localStorage
     if (!db) {
-      setLoading(false)
+      loadFromLocalStorage()
       return
     }
 
@@ -177,11 +209,19 @@ function App() {
       setLoading(false)
     }, (error) => {
       console.error('Error loading transactions:', error)
-      setLoading(false)
+      loadFromLocalStorage()
     })
 
     return () => unsubscribe()
   }, [userId])
+
+  // Auto-save to localStorage whenever transactions change (if Firebase is not configured)
+  useEffect(() => {
+    if (!db && transactions.length > 0 && !loading) {
+      localStorage.setItem('finance-tracker-transactions', JSON.stringify(transactions))
+      console.log('Auto-saved to localStorage:', transactions.length)
+    }
+  }, [transactions, db, loading])
 
   const handleAddTransaction = async (e) => {
     e.preventDefault()
@@ -301,12 +341,82 @@ function App() {
         await deleteDoc(transactionRef)
         console.log('Transaction deleted successfully')
       } else {
-        setTransactions(transactions.filter(t => t.id !== transactionId))
+        const updated = transactions.filter(t => t.id !== transactionId)
+        setTransactions(updated)
         console.log('Transaction deleted from local state')
       }
     } catch (error) {
       console.error('Error deleting transaction:', error)
     }
+  }
+
+  // Save to localStorage
+  const handleSaveToLocal = () => {
+    try {
+      localStorage.setItem('finance-tracker-transactions', JSON.stringify(transactions))
+      alert(`✅ Saved ${transactions.length} transactions to local storage!`)
+      console.log('Saved to localStorage:', transactions.length)
+    } catch (error) {
+      console.error('Error saving to localStorage:', error)
+      alert('❌ Error saving data!')
+    }
+  }
+
+  // Load from localStorage
+  const handleLoadFromLocal = () => {
+    try {
+      const saved = localStorage.getItem('finance-tracker-transactions')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        setTransactions(parsed)
+        alert(`✅ Loaded ${parsed.length} transactions from local storage!`)
+        console.log('Loaded from localStorage:', parsed.length)
+      } else {
+        alert('⚠️ No saved data found!')
+      }
+    } catch (error) {
+      console.error('Error loading from localStorage:', error)
+      alert('❌ Error loading data!')
+    }
+  }
+
+  // Export to JSON file
+  const handleExportToFile = () => {
+    try {
+      const dataStr = JSON.stringify(transactions, null, 2)
+      const dataBlob = new Blob([dataStr], { type: 'application/json' })
+      const url = URL.createObjectURL(dataBlob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `finance-tracker-backup-${new Date().toISOString().split('T')[0]}.json`
+      link.click()
+      URL.revokeObjectURL(url)
+      alert(`✅ Exported ${transactions.length} transactions to file!`)
+    } catch (error) {
+      console.error('Error exporting:', error)
+      alert('❌ Error exporting data!')
+    }
+  }
+
+  // Import from JSON file
+  const handleImportFromFile = (event) => {
+    const file = event.target.files[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const imported = JSON.parse(e.target.result)
+        setTransactions(imported)
+        localStorage.setItem('finance-tracker-transactions', JSON.stringify(imported))
+        alert(`✅ Imported ${imported.length} transactions!`)
+        console.log('Imported from file:', imported.length)
+      } catch (error) {
+        console.error('Error importing:', error)
+        alert('❌ Error importing data! Make sure the file is valid JSON.')
+      }
+    }
+    reader.readAsText(file)
   }
 
   if (loading) {
@@ -325,10 +435,65 @@ function App() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-4xl md:text-5xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-            Finance Dashboard
-          </h1>
-          <p className="text-gray-400">Track your income and expenses with ease</p>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h1 className="text-4xl md:text-5xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+                Finance Dashboard
+              </h1>
+              <p className="text-gray-400">Track your income and expenses with ease</p>
+            </div>
+
+            {/* Save/Load Buttons */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={handleSaveToLocal}
+                className="px-4 py-2 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-medium rounded-lg transition-all shadow-lg hover:shadow-xl flex items-center gap-2"
+                title="Save to browser storage"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                </svg>
+                Save
+              </button>
+
+              <button
+                onClick={handleLoadFromLocal}
+                className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium rounded-lg transition-all shadow-lg hover:shadow-xl flex items-center gap-2"
+                title="Load from browser storage"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Load
+              </button>
+
+              <button
+                onClick={handleExportToFile}
+                className="px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-medium rounded-lg transition-all shadow-lg hover:shadow-xl flex items-center gap-2"
+                title="Export to JSON file"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Export
+              </button>
+
+              <label className="px-4 py-2 bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 text-white font-medium rounded-lg transition-all shadow-lg hover:shadow-xl flex items-center gap-2 cursor-pointer"
+                title="Import from JSON file"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                Import
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleImportFromFile}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          </div>
         </div>
 
         {/* Financial Summary Cards */}
