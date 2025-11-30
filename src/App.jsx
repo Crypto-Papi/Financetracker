@@ -77,7 +77,7 @@ function App() {
     return totalIncome - totalExpense
   }, [totalIncome, totalExpense])
 
-  // Process data for expense breakdown pie chart - GROUP BY DESCRIPTION
+  // Process data for expense breakdown - TOP 6 + OTHER
   const expenseChartData = useMemo(() => {
     const expenses = transactions.filter(transaction => transaction.type === 'expense')
 
@@ -92,12 +92,27 @@ function App() {
     }, {})
 
     // Convert to array and sort by amount (highest first)
-    return Object.entries(groupedExpenses)
+    const sorted = Object.entries(groupedExpenses)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
+
+    // Take top 6, group rest as "Other"
+    if (sorted.length <= 6) {
+      return sorted
+    }
+
+    const top6 = sorted.slice(0, 6)
+    const others = sorted.slice(6)
+    const otherTotal = others.reduce((sum, item) => sum + item.value, 0)
+
+    if (otherTotal > 0) {
+      top6.push({ name: 'Other', value: otherTotal })
+    }
+
+    return top6
   }, [transactions])
 
-  // Process data for income breakdown pie chart - GROUP BY DESCRIPTION
+  // Process data for income breakdown - TOP 6 + OTHER
   const incomeChartData = useMemo(() => {
     const incomes = transactions.filter(transaction => transaction.type === 'income')
 
@@ -112,9 +127,24 @@ function App() {
     }, {})
 
     // Convert to array and sort by amount (highest first)
-    return Object.entries(groupedIncomes)
+    const sorted = Object.entries(groupedIncomes)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
+
+    // Take top 6, group rest as "Other"
+    if (sorted.length <= 6) {
+      return sorted
+    }
+
+    const top6 = sorted.slice(0, 6)
+    const others = sorted.slice(6)
+    const otherTotal = others.reduce((sum, item) => sum + item.value, 0)
+
+    if (otherTotal > 0) {
+      top6.push({ name: 'Other', value: otherTotal })
+    }
+
+    return top6
   }, [transactions])
 
   // Monthly trend data
@@ -694,7 +724,7 @@ function App() {
                 </svg>
                 Expense Breakdown
               </h2>
-              <p className="text-sm text-gray-400 mb-4">All Expenses Grouped by Category</p>
+              <p className="text-sm text-gray-400 mb-4">Top Categories (Others grouped)</p>
 
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
@@ -728,7 +758,7 @@ function App() {
                 </svg>
                 Income Breakdown
               </h2>
-              <p className="text-sm text-gray-400 mb-4">All Income Grouped by Category</p>
+              <p className="text-sm text-gray-400 mb-4">Top Sources (Others grouped)</p>
 
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
@@ -779,6 +809,61 @@ function App() {
                 <Bar dataKey="expense" fill="#ef4444" name="Expense" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* Spending by Category - Professional View */}
+        {expenseChartData.length > 0 && (
+          <div className="mb-8 bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl shadow-2xl border border-gray-700/50">
+            <h2 className="text-2xl font-semibold mb-6 flex items-center">
+              <svg className="w-6 h-6 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              Spending by Category
+            </h2>
+
+            <div className="space-y-4">
+              {expenseChartData.map((category, index) => {
+                const percentage = (category.value / totalExpense) * 100
+                return (
+                  <div key={index} className="group">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-4 h-4 rounded-full"
+                          style={{ backgroundColor: EXPENSE_COLORS[index % EXPENSE_COLORS.length] }}
+                        />
+                        <span className="font-medium text-white">{category.name}</span>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span className="text-gray-400 text-sm">{percentage.toFixed(1)}%</span>
+                        <span className="font-bold text-white min-w-[100px] text-right">
+                          ${category.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500 ease-out"
+                        style={{
+                          width: `${percentage}%`,
+                          backgroundColor: EXPENSE_COLORS[index % EXPENSE_COLORS.length]
+                        }}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="mt-6 pt-6 border-t border-gray-700">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-gray-300">Total Monthly Expenses</span>
+                <span className="text-2xl font-bold text-red-400">
+                  ${totalExpense.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
           </div>
         )}
 
