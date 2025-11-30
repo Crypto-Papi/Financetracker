@@ -42,6 +42,15 @@ function App() {
   const [editingId, setEditingId] = useState(null)
   const [isEditing, setIsEditing] = useState(false)
 
+  // Debt & Obligations state
+  const [debts, setDebts] = useState([])
+  const [showDebtForm, setShowDebtForm] = useState(false)
+  const [debtName, setDebtName] = useState('')
+  const [debtBalance, setDebtBalance] = useState('')
+  const [debtMonthlyPayment, setDebtMonthlyPayment] = useState('')
+  const [debtCategory, setDebtCategory] = useState('Credit Cards')
+  const [editingDebtId, setEditingDebtId] = useState(null)
+
   // Filter transactions based on search and filter
   const filteredTransactions = useMemo(() => {
     return transactions.filter(transaction => {
@@ -239,6 +248,28 @@ function App() {
     }
   }, [transactions, db, loading])
 
+  // Load debts from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('finance-tracker-debts')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        setDebts(parsed)
+        console.log('Loaded debts from localStorage:', parsed.length)
+      }
+    } catch (error) {
+      console.error('Error loading debts from localStorage:', error)
+    }
+  }, [])
+
+  // Auto-save debts to localStorage whenever they change
+  useEffect(() => {
+    if (debts.length > 0) {
+      localStorage.setItem('finance-tracker-debts', JSON.stringify(debts))
+      console.log('Auto-saved debts to localStorage:', debts.length)
+    }
+  }, [debts])
+
   const handleAddTransaction = async (e) => {
     e.preventDefault()
 
@@ -435,6 +466,95 @@ function App() {
     reader.readAsText(file)
   }
 
+  // Debt Management Functions
+  const handleAddDebt = (e) => {
+    e.preventDefault()
+
+    if (!debtName.trim()) {
+      alert('❌ Debt name cannot be empty')
+      return
+    }
+
+    if (!debtBalance || parseFloat(debtBalance) < 0) {
+      alert('❌ Balance must be a positive number')
+      return
+    }
+
+    if (!debtMonthlyPayment || parseFloat(debtMonthlyPayment) < 0) {
+      alert('❌ Monthly payment must be a positive number')
+      return
+    }
+
+    const newDebt = {
+      id: editingDebtId || Date.now(),
+      name: debtName.trim(),
+      balance: parseFloat(debtBalance),
+      monthlyPayment: parseFloat(debtMonthlyPayment),
+      category: debtCategory,
+      createdAt: Date.now()
+    }
+
+    if (editingDebtId) {
+      // Update existing debt
+      setDebts(debts.map(d => d.id === editingDebtId ? newDebt : d))
+      console.log('Debt updated:', newDebt)
+    } else {
+      // Add new debt
+      setDebts([...debts, newDebt])
+      console.log('Debt added:', newDebt)
+    }
+
+    // Reset form
+    setDebtName('')
+    setDebtBalance('')
+    setDebtMonthlyPayment('')
+    setDebtCategory('Credit Cards')
+    setEditingDebtId(null)
+    setShowDebtForm(false)
+  }
+
+  const handleEditDebt = (debt) => {
+    setDebtName(debt.name)
+    setDebtBalance(debt.balance.toString())
+    setDebtMonthlyPayment(debt.monthlyPayment.toString())
+    setDebtCategory(debt.category)
+    setEditingDebtId(debt.id)
+    setShowDebtForm(true)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleDeleteDebt = (debtId) => {
+    if (confirm('Are you sure you want to delete this debt/obligation?')) {
+      setDebts(debts.filter(d => d.id !== debtId))
+      console.log('Debt deleted:', debtId)
+    }
+  }
+
+  const handleCancelDebtEdit = () => {
+    setDebtName('')
+    setDebtBalance('')
+    setDebtMonthlyPayment('')
+    setDebtCategory('Credit Cards')
+    setEditingDebtId(null)
+    setShowDebtForm(false)
+  }
+
+  // Calculate totals by category
+  const debtTotals = useMemo(() => {
+    const categories = ['Credit Cards', 'Auto Loans', 'Student Loans', 'Monthly Subscriptions']
+    return categories.map(category => {
+      const categoryDebts = debts.filter(d => d.category === category)
+      const totalBalance = categoryDebts.reduce((sum, d) => sum + d.balance, 0)
+      const totalMonthlyPayment = categoryDebts.reduce((sum, d) => sum + d.monthlyPayment, 0)
+      return {
+        category,
+        totalBalance,
+        totalMonthlyPayment,
+        count: categoryDebts.length
+      }
+    }).filter(c => c.count > 0)
+  }, [debts])
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white flex items-center justify-center">
@@ -517,7 +637,7 @@ function App() {
           {/* Total Balance Card */}
           <div className="bg-gradient-to-br from-blue-600 to-blue-800 p-6 rounded-2xl shadow-2xl border border-blue-500/50 backdrop-blur-sm transform transition-all hover:scale-105 hover:shadow-blue-500/50">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium text-blue-100">Total Balance</p>
+              <p className="text-sm font-medium text-blue-100">Monthly Balance</p>
               <svg className="w-8 h-8 text-blue-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
@@ -526,14 +646,14 @@ function App() {
               ${totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
             <p className="text-xs text-blue-200 mt-2">
-              {totalBalance >= 0 ? '↑ Positive balance' : '↓ Negative balance'}
+              {totalBalance >= 0 ? '↑ Positive monthly balance' : '↓ Negative monthly balance'}
             </p>
           </div>
 
           {/* Total Income Card */}
           <div className="bg-gradient-to-br from-green-600 to-green-800 p-6 rounded-2xl shadow-2xl border border-green-500/50 backdrop-blur-sm transform transition-all hover:scale-105 hover:shadow-green-500/50">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium text-green-100">Total Income</p>
+              <p className="text-sm font-medium text-green-100">Monthly Income</p>
               <svg className="w-8 h-8 text-green-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11l5-5m0 0l5 5m-5-5v12" />
               </svg>
@@ -542,14 +662,14 @@ function App() {
               ${totalIncome.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
             <p className="text-xs text-green-200 mt-2">
-              {transactions.filter(t => t.type === 'income').length} transactions
+              {transactions.filter(t => t.type === 'income').length} transactions this month
             </p>
           </div>
 
           {/* Total Expense Card */}
           <div className="bg-gradient-to-br from-red-600 to-red-800 p-6 rounded-2xl shadow-2xl border border-red-500/50 backdrop-blur-sm transform transition-all hover:scale-105 hover:shadow-red-500/50">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium text-red-100">Total Expense</p>
+              <p className="text-sm font-medium text-red-100">Monthly Expenses</p>
               <svg className="w-8 h-8 text-red-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 13l-5 5m0 0l-5-5m5 5V6" />
               </svg>
@@ -558,7 +678,7 @@ function App() {
               ${totalExpense.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
             <p className="text-xs text-red-200 mt-2">
-              {transactions.filter(t => t.type === 'expense').length} transactions
+              {transactions.filter(t => t.type === 'expense').length} transactions this month
             </p>
           </div>
         </div>
@@ -661,6 +781,171 @@ function App() {
             </ResponsiveContainer>
           </div>
         )}
+
+        {/* Debt & Obligations Section */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-3xl font-bold flex items-center">
+              <svg className="w-8 h-8 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+              </svg>
+              Debt & Obligations
+            </h2>
+            <button
+              onClick={() => setShowDebtForm(!showDebtForm)}
+              className="px-4 py-2 bg-gradient-to-r from-yellow-600 to-yellow-700 hover:from-yellow-700 hover:to-yellow-800 text-white font-medium rounded-lg transition-all shadow-lg hover:shadow-xl flex items-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              {showDebtForm ? 'Cancel' : 'Add Debt/Obligation'}
+            </button>
+          </div>
+
+          {/* Debt Form */}
+          {showDebtForm && (
+            <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl shadow-2xl border border-gray-700/50 mb-6">
+              <h3 className="text-xl font-semibold mb-4 text-yellow-400">
+                {editingDebtId ? 'Edit Debt/Obligation' : 'Add New Debt/Obligation'}
+              </h3>
+              <form onSubmit={handleAddDebt} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Category</label>
+                  <select
+                    value={debtCategory}
+                    onChange={(e) => setDebtCategory(e.target.value)}
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  >
+                    <option value="Credit Cards">Credit Cards</option>
+                    <option value="Auto Loans">Auto Loans</option>
+                    <option value="Student Loans">Student Loans</option>
+                    <option value="Monthly Subscriptions">Monthly Subscriptions</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Name/Description</label>
+                  <input
+                    type="text"
+                    value={debtName}
+                    onChange={(e) => setDebtName(e.target.value)}
+                    placeholder="e.g., Chase Visa, Car Loan, Netflix"
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Total Balance</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={debtBalance}
+                    onChange={(e) => setDebtBalance(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Monthly Payment</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={debtMonthlyPayment}
+                    onChange={(e) => setDebtMonthlyPayment(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  />
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2 bg-gradient-to-r from-yellow-600 to-yellow-700 hover:from-yellow-700 hover:to-yellow-800 text-white font-medium rounded-lg transition-all shadow-lg"
+                  >
+                    {editingDebtId ? '✓ Update' : '+ Add'}
+                  </button>
+                  {editingDebtId && (
+                    <button
+                      type="button"
+                      onClick={handleCancelDebtEdit}
+                      className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-all"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Debt Summary Cards by Category */}
+          {debtTotals.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              {debtTotals.map((category) => (
+                <div key={category.category} className="bg-gradient-to-br from-yellow-600/20 to-orange-600/20 backdrop-blur-sm p-4 rounded-xl border border-yellow-500/30">
+                  <p className="text-sm font-medium text-yellow-200 mb-1">{category.category}</p>
+                  <p className="text-2xl font-bold text-white mb-1">
+                    ${category.totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-xs text-yellow-300">
+                    ${category.totalMonthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mo
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">{category.count} {category.count === 1 ? 'item' : 'items'}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Individual Debts List */}
+          {debts.length > 0 && (
+            <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl shadow-2xl border border-gray-700/50">
+              <h3 className="text-xl font-semibold mb-4">All Debts & Obligations</h3>
+              <div className="space-y-3">
+                {debts.map((debt) => (
+                  <div key={debt.id} className="group bg-gray-700/50 p-4 rounded-lg hover:bg-gray-700 transition-all flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className="px-2 py-1 bg-yellow-600/30 text-yellow-300 text-xs rounded-md font-medium">
+                          {debt.category}
+                        </span>
+                        <p className="font-semibold text-white">{debt.name}</p>
+                      </div>
+                      <div className="flex gap-4 text-sm">
+                        <span className="text-gray-300">
+                          Balance: <span className="text-red-400 font-semibold">${debt.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        </span>
+                        <span className="text-gray-300">
+                          Monthly: <span className="text-yellow-400 font-semibold">${debt.monthlyPayment.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleEditDebt(debt)}
+                        className="opacity-0 group-hover:opacity-100 p-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-lg transition-all"
+                        title="Edit"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteDebt(debt.id)}
+                        className="opacity-0 group-hover:opacity-100 p-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-all"
+                        title="Delete"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Transactions Section */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
