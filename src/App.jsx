@@ -68,28 +68,44 @@ function App() {
     return totalIncome - totalExpense
   }, [totalIncome, totalExpense])
 
-  // Process data for expense breakdown pie chart
+  // Process data for expense breakdown pie chart - GROUP BY DESCRIPTION
   const expenseChartData = useMemo(() => {
     const expenses = transactions.filter(transaction => transaction.type === 'expense')
-    const recentExpenses = expenses
-      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-      .slice(0, 5)
-    return recentExpenses.map(expense => ({
-      name: expense.description,
-      value: expense.amount
-    }))
+
+    // Group expenses by description and sum amounts
+    const groupedExpenses = expenses.reduce((acc, expense) => {
+      const key = expense.description
+      if (!acc[key]) {
+        acc[key] = 0
+      }
+      acc[key] += expense.amount
+      return acc
+    }, {})
+
+    // Convert to array and sort by amount (highest first)
+    return Object.entries(groupedExpenses)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
   }, [transactions])
 
-  // Process data for income breakdown pie chart
+  // Process data for income breakdown pie chart - GROUP BY DESCRIPTION
   const incomeChartData = useMemo(() => {
     const incomes = transactions.filter(transaction => transaction.type === 'income')
-    const recentIncomes = incomes
-      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-      .slice(0, 5)
-    return recentIncomes.map(income => ({
-      name: income.description,
-      value: income.amount
-    }))
+
+    // Group incomes by description and sum amounts
+    const groupedIncomes = incomes.reduce((acc, income) => {
+      const key = income.description
+      if (!acc[key]) {
+        acc[key] = 0
+      }
+      acc[key] += income.amount
+      return acc
+    }, {})
+
+    // Convert to array and sort by amount (highest first)
+    return Object.entries(groupedIncomes)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
   }, [transactions])
 
   // Monthly trend data
@@ -558,7 +574,7 @@ function App() {
                 </svg>
                 Expense Breakdown
               </h2>
-              <p className="text-sm text-gray-400 mb-4">Top 5 Recent Expenses</p>
+              <p className="text-sm text-gray-400 mb-4">All Expenses Grouped by Category</p>
 
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
@@ -592,7 +608,7 @@ function App() {
                 </svg>
                 Income Breakdown
               </h2>
-              <p className="text-sm text-gray-400 mb-4">Top 5 Recent Income</p>
+              <p className="text-sm text-gray-400 mb-4">All Income Grouped by Category</p>
 
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
