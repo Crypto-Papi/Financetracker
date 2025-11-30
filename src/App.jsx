@@ -1,16 +1,27 @@
 import { useState, useEffect, useMemo } from 'react'
 import { initializeApp } from 'firebase/app'
 import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth'
-import { getFirestore, collection, addDoc, serverTimestamp, onSnapshot, query, orderBy, deleteDoc, doc } from 'firebase/firestore'
+import { getFirestore, collection, addDoc, serverTimestamp, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc } from 'firebase/firestore'
 import { ResponsiveContainer, PieChart, Pie, Cell, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
 
-// Initialize Firebase only if config is available
+// Initialize Firebase
 let app, auth, db
 
-if (window.__firebase_config) {
-  app = initializeApp(window.__firebase_config)
+// Try to get Firebase config from environment variables (Vercel) or window object (other deployments)
+const firebaseConfig = window.__firebase_config || {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
+}
+
+if (firebaseConfig && firebaseConfig.apiKey) {
+  app = initializeApp(firebaseConfig)
   auth = getAuth(app)
   db = getFirestore(app)
+  console.log('Firebase initialized successfully')
 } else {
   console.warn('Firebase config not found. Running in development mode without Firebase.')
 }
@@ -26,6 +37,10 @@ function App() {
   const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
   const [type, setType] = useState('income')
+
+  // Edit mode state
+  const [editingId, setEditingId] = useState(null)
+  const [isEditing, setIsEditing] = useState(false)
 
   // Filter transactions based on search and filter
   const filteredTransactions = useMemo(() => {
@@ -148,7 +163,7 @@ function App() {
       return
     }
 
-    const appId = window.__app_id
+    const appId = window.__app_id || import.meta.env.VITE_APP_ID || 'finance-tracker-app'
     const transactionsRef = collection(db, `artifacts/${appId}/users/${userId}/transactions`)
     const q = query(transactionsRef, orderBy('createdAt', 'desc'))
 
@@ -187,37 +202,93 @@ function App() {
     }
 
     try {
-      if (db) {
-        const appId = window.__app_id
-        const transactionsRef = collection(db, `artifacts/${appId}/users/${userId}/transactions`)
-
-        await addDoc(transactionsRef, {
-          description: description.trim(),
-          amount: parseFloat(amount),
-          type,
-          createdAt: serverTimestamp(),
-        })
-
-        console.log('Transaction added successfully to Firestore')
+      if (isEditing) {
+        // Update existing transaction
+        await handleUpdateTransaction()
       } else {
-        const newTransaction = {
-          id: Date.now(),
-          description: description.trim(),
-          amount: parseFloat(amount),
-          type,
-          createdAt: Date.now(),
-        }
+        // Add new transaction
+        if (db) {
+          const appId = window.__app_id || import.meta.env.VITE_APP_ID || 'finance-tracker-app'
+          const transactionsRef = collection(db, `artifacts/${appId}/users/${userId}/transactions`)
 
-        setTransactions([newTransaction, ...transactions])
-        console.log('Transaction added to local state (dev mode)')
+          await addDoc(transactionsRef, {
+            description: description.trim(),
+            amount: parseFloat(amount),
+            type,
+            createdAt: serverTimestamp(),
+          })
+
+          console.log('Transaction added successfully to Firestore')
+        } else {
+          const newTransaction = {
+            id: Date.now(),
+            description: description.trim(),
+            amount: parseFloat(amount),
+            type,
+            createdAt: Date.now(),
+          }
+
+          setTransactions([newTransaction, ...transactions])
+          console.log('Transaction added to local state (dev mode)')
+        }
       }
 
+      // Reset form
       setDescription('')
       setAmount('')
       setType('income')
+      setIsEditing(false)
+      setEditingId(null)
     } catch (error) {
       console.error('Error adding transaction:', error)
     }
+  }
+
+  const handleUpdateTransaction = async () => {
+    if (!userId || !editingId) return
+
+    try {
+      if (db) {
+        const appId = window.__app_id || import.meta.env.VITE_APP_ID || 'finance-tracker-app'
+        const transactionRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, editingId)
+
+        await updateDoc(transactionRef, {
+          description: description.trim(),
+          amount: parseFloat(amount),
+          type,
+        })
+
+        console.log('Transaction updated successfully')
+      } else {
+        setTransactions(transactions.map(t =>
+          t.id === editingId
+            ? { ...t, description: description.trim(), amount: parseFloat(amount), type }
+            : t
+        ))
+        console.log('Transaction updated in local state')
+      }
+    } catch (error) {
+      console.error('Error updating transaction:', error)
+    }
+  }
+
+  const handleEditTransaction = (transaction) => {
+    setDescription(transaction.description)
+    setAmount(transaction.amount.toString())
+    setType(transaction.type)
+    setEditingId(transaction.id)
+    setIsEditing(true)
+
+    // Scroll to form
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleCancelEdit = () => {
+    setDescription('')
+    setAmount('')
+    setType('income')
+    setIsEditing(false)
+    setEditingId(null)
   }
 
   const handleDeleteTransaction = async (transactionId) => {
@@ -225,7 +296,7 @@ function App() {
 
     try {
       if (db) {
-        const appId = window.__app_id
+        const appId = window.__app_id || import.meta.env.VITE_APP_ID || 'finance-tracker-app'
         const transactionRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, transactionId)
         await deleteDoc(transactionRef)
         console.log('Transaction deleted successfully')
@@ -417,10 +488,16 @@ function App() {
             <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl shadow-2xl border border-gray-700/50 sticky top-8">
               <h2 className="text-2xl font-semibold mb-6 flex items-center">
                 <svg className="w-6 h-6 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isEditing ? "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" : "M12 6v6m0 0v6m0-6h6m-6 0H6"} />
                 </svg>
-                Add Transaction
+                {isEditing ? 'Edit Transaction' : 'Add Transaction'}
               </h2>
+
+              {isEditing && (
+                <div className="mb-4 p-3 bg-blue-500/20 border border-blue-500/50 rounded-lg">
+                  <p className="text-sm text-blue-300">Editing mode - Update the fields below</p>
+                </div>
+              )}
 
               <form onSubmit={handleAddTransaction} className="space-y-5">
                 {/* Description Input */}
@@ -475,12 +552,24 @@ function App() {
                 </div>
 
                 {/* Submit Button */}
-                <button
-                  type="submit"
-                  className="w-full h-11 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 active:from-blue-800 active:to-purple-800 text-white font-medium rounded-xl transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 shadow-lg hover:shadow-xl transform hover:scale-105"
-                >
-                  Add Transaction
-                </button>
+                <div className="flex gap-3">
+                  <button
+                    type="submit"
+                    className="flex-1 h-11 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 active:from-blue-800 active:to-purple-800 text-white font-medium rounded-xl transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800 shadow-lg hover:shadow-xl transform hover:scale-105"
+                  >
+                    {isEditing ? '✓ Update' : '+ Add Transaction'}
+                  </button>
+
+                  {isEditing && (
+                    <button
+                      type="button"
+                      onClick={handleCancelEdit}
+                      className="h-11 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-xl transition-all focus:outline-none focus:ring-2 focus:ring-gray-500"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
               </form>
             </div>
           </div>
@@ -553,6 +642,15 @@ function App() {
                         >
                           {transaction.type === 'income' ? '+' : '-'}${transaction.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
+                        <button
+                          onClick={() => handleEditTransaction(transaction)}
+                          className="opacity-0 group-hover:opacity-100 p-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-lg transition-all"
+                          title="Edit transaction"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
                         <button
                           onClick={() => handleDeleteTransaction(transaction.id)}
                           className="opacity-0 group-hover:opacity-100 p-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-all"
