@@ -967,19 +967,86 @@ function App() {
                   </select>
                 </div>
 
-                {/* Category Input */}
+                {/* Category Dropdown */}
                 <div className="space-y-2">
                   <label htmlFor="category" className="text-sm font-medium text-gray-200">
                     Category <span className="text-gray-500 text-xs">(Optional)</span>
                   </label>
-                  <input
+                  <select
                     id="category"
-                    type="text"
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
-                    placeholder="e.g., Credit Card Payment, Auto Loan, Subscription..."
-                    className="w-full h-11 px-4 py-2 bg-gray-900/50 border border-gray-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-gray-500"
-                  />
+                    className="w-full h-11 px-4 py-2 bg-gray-900/50 border border-gray-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-gray-500 cursor-pointer"
+                  >
+                    <option value="">-- Select Category --</option>
+                    <optgroup label="💳 Debt Payments">
+                      <option value="Credit Card Payment">Credit Card Payment</option>
+                      <option value="Auto Loan">Auto Loan</option>
+                      <option value="Student Loan">Student Loan</option>
+                      <option value="Mortgage">Mortgage</option>
+                      <option value="Personal Loan">Personal Loan</option>
+                    </optgroup>
+                    <optgroup label="📱 Subscriptions">
+                      <option value="Streaming Services">Streaming Services</option>
+                      <option value="Software/Apps">Software/Apps</option>
+                      <option value="Music">Music</option>
+                      <option value="Gaming">Gaming</option>
+                      <option value="Cloud Storage">Cloud Storage</option>
+                    </optgroup>
+                    <optgroup label="🏠 Housing">
+                      <option value="Rent">Rent</option>
+                      <option value="Utilities">Utilities</option>
+                      <option value="Internet/Cable">Internet/Cable</option>
+                      <option value="Home Insurance">Home Insurance</option>
+                      <option value="HOA Fees">HOA Fees</option>
+                    </optgroup>
+                    <optgroup label="🚗 Transportation">
+                      <option value="Car Payment">Car Payment</option>
+                      <option value="Car Insurance">Car Insurance</option>
+                      <option value="Gas">Gas</option>
+                      <option value="Public Transit">Public Transit</option>
+                      <option value="Parking">Parking</option>
+                    </optgroup>
+                    <optgroup label="🍔 Food & Dining">
+                      <option value="Groceries">Groceries</option>
+                      <option value="Restaurants">Restaurants</option>
+                      <option value="Fast Food">Fast Food</option>
+                      <option value="Coffee Shops">Coffee Shops</option>
+                    </optgroup>
+                    <optgroup label="💰 Income">
+                      <option value="Salary">Salary</option>
+                      <option value="Freelance">Freelance</option>
+                      <option value="Investment Income">Investment Income</option>
+                      <option value="Side Hustle">Side Hustle</option>
+                      <option value="Bonus">Bonus</option>
+                    </optgroup>
+                    <optgroup label="🏥 Health">
+                      <option value="Health Insurance">Health Insurance</option>
+                      <option value="Medical Bills">Medical Bills</option>
+                      <option value="Pharmacy">Pharmacy</option>
+                      <option value="Gym Membership">Gym Membership</option>
+                    </optgroup>
+                    <optgroup label="🛍️ Shopping">
+                      <option value="Clothing">Clothing</option>
+                      <option value="Electronics">Electronics</option>
+                      <option value="Home Goods">Home Goods</option>
+                      <option value="Personal Care">Personal Care</option>
+                    </optgroup>
+                    <optgroup label="🎉 Entertainment">
+                      <option value="Movies/Events">Movies/Events</option>
+                      <option value="Hobbies">Hobbies</option>
+                      <option value="Travel">Travel</option>
+                      <option value="Sports">Sports</option>
+                    </optgroup>
+                    <optgroup label="📚 Other">
+                      <option value="Education">Education</option>
+                      <option value="Childcare">Childcare</option>
+                      <option value="Pet Care">Pet Care</option>
+                      <option value="Gifts/Donations">Gifts/Donations</option>
+                      <option value="Taxes">Taxes</option>
+                      <option value="Other">Other</option>
+                    </optgroup>
+                  </select>
                 </div>
 
                 {/* Recurring Checkbox */}
