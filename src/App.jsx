@@ -41,6 +41,7 @@ function App() {
   const [isRecurring, setIsRecurring] = useState(false)
   const [remainingBalance, setRemainingBalance] = useState('')
   const [dueDate, setDueDate] = useState('')
+  const [interestRate, setInterestRate] = useState('')
 
   // Edit mode state
   const [editingId, setEditingId] = useState(null)
@@ -53,6 +54,9 @@ function App() {
   // Calendar state
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [selectedDay, setSelectedDay] = useState(null)
+
+  // Category modal state
+  const [selectedCategory, setSelectedCategory] = useState(null)
 
   // Filter transactions based on search and filter
   const filteredTransactions = useMemo(() => {
@@ -80,39 +84,26 @@ function App() {
     return totalIncome - totalExpense
   }, [totalIncome, totalExpense])
 
-  // Process data for expense breakdown - TOP 6 + OTHER
+  // Process data for expense breakdown - grouped by category
   const expenseChartData = useMemo(() => {
     const expenses = transactions.filter(transaction => transaction.type === 'expense')
 
-    // Group expenses by description and sum amounts
+    // Group expenses by category and sum amounts
     const groupedExpenses = expenses.reduce((acc, expense) => {
-      const key = expense.description
+      const key = expense.category || 'Uncategorized'
       if (!acc[key]) {
-        acc[key] = 0
+        acc[key] = { name: key, value: 0, items: [] }
       }
-      acc[key] += expense.amount
+      acc[key].value += expense.amount
+      acc[key].items.push(expense)
       return acc
     }, {})
 
     // Convert to array and sort by amount (highest first)
-    const sorted = Object.entries(groupedExpenses)
-      .map(([name, value]) => ({ name, value }))
+    const sorted = Object.values(groupedExpenses)
       .sort((a, b) => b.value - a.value)
 
-    // Take top 6, group rest as "Other"
-    if (sorted.length <= 6) {
-      return sorted
-    }
-
-    const top6 = sorted.slice(0, 6)
-    const others = sorted.slice(6)
-    const otherTotal = others.reduce((sum, item) => sum + item.value, 0)
-
-    if (otherTotal > 0) {
-      top6.push({ name: 'Other', value: otherTotal })
-    }
-
-    return top6
+    return sorted
   }, [transactions])
 
   // Process data for income breakdown - TOP 6 + OTHER
@@ -169,6 +160,29 @@ function App() {
     })
 
     return Object.values(monthlyData).sort((a, b) => a.month.localeCompare(b.month)).slice(-6)
+  }, [transactions])
+
+  // Debt Avalanche Calculator - sorted by interest rate (highest first)
+  const debtAvalancheData = useMemo(() => {
+    const debts = transactions.filter(t =>
+      t.type === 'expense' &&
+      t.remainingBalance &&
+      t.remainingBalance > 0 &&
+      (t.category === 'Credit Card Payment' || t.category === 'Auto Loan' || t.category === 'Student Loan' || t.interestRate)
+    )
+
+    // Sort by interest rate (highest first)
+    const sorted = debts.sort((a, b) => {
+      const rateA = a.interestRate || 0
+      const rateB = b.interestRate || 0
+      return rateB - rateA
+    })
+
+    return sorted.map((debt, index) => ({
+      ...debt,
+      priority: index + 1,
+      monthlyInterest: (debt.remainingBalance * (debt.interestRate || 0)) / 100 / 12
+    }))
   }, [transactions])
 
   // Colors for charts
@@ -321,6 +335,7 @@ function App() {
             isRecurring: isRecurring,
             remainingBalance: remainingBalance ? parseFloat(remainingBalance) : null,
             dueDate: dueDate ? parseInt(dueDate) : null,
+            interestRate: interestRate ? parseFloat(interestRate) : null,
             createdAt: serverTimestamp(),
           })
 
@@ -335,6 +350,7 @@ function App() {
             isRecurring: isRecurring,
             remainingBalance: remainingBalance ? parseFloat(remainingBalance) : null,
             dueDate: dueDate ? parseInt(dueDate) : null,
+            interestRate: interestRate ? parseFloat(interestRate) : null,
             createdAt: Date.now(),
           }
 
@@ -351,6 +367,7 @@ function App() {
       setIsRecurring(false)
       setRemainingBalance('')
       setDueDate('')
+      setInterestRate('')
       setIsEditing(false)
       setEditingId(null)
     } catch (error) {
@@ -374,6 +391,7 @@ function App() {
           isRecurring: isRecurring,
           remainingBalance: remainingBalance ? parseFloat(remainingBalance) : null,
           dueDate: dueDate ? parseInt(dueDate) : null,
+          interestRate: interestRate ? parseFloat(interestRate) : null,
         })
 
         console.log('Transaction updated successfully')
@@ -389,6 +407,7 @@ function App() {
                 isRecurring: isRecurring,
                 remainingBalance: remainingBalance ? parseFloat(remainingBalance) : null,
                 dueDate: dueDate ? parseInt(dueDate) : null,
+                interestRate: interestRate ? parseFloat(interestRate) : null,
               }
             : t
         ))
@@ -407,6 +426,7 @@ function App() {
     setIsRecurring(transaction.isRecurring || false)
     setRemainingBalance(transaction.remainingBalance ? transaction.remainingBalance.toString() : '')
     setDueDate(transaction.dueDate ? transaction.dueDate.toString() : '')
+    setInterestRate(transaction.interestRate ? transaction.interestRate.toString() : '')
     setEditingId(transaction.id)
     setIsEditing(true)
   }
@@ -419,6 +439,7 @@ function App() {
     setIsRecurring(false)
     setRemainingBalance('')
     setDueDate('')
+    setInterestRate('')
     setIsEditing(false)
     setEditingId(null)
   }
@@ -988,14 +1009,14 @@ function App() {
               {expenseChartData.map((category, index) => {
                 const percentage = (category.value / totalExpense) * 100
                 return (
-                  <div key={index} className="group">
-                    <div className="flex items-center justify-between mb-2">
+                  <div key={index} className="group cursor-pointer" onClick={() => setSelectedCategory(category)}>
+                    <div className="flex items-center justify-between mb-2 p-2 rounded-lg hover:bg-gray-700/50 transition-colors">
                       <div className="flex items-center gap-3">
                         <div
                           className="w-4 h-4 rounded-full"
                           style={{ backgroundColor: EXPENSE_COLORS[index % EXPENSE_COLORS.length] }}
                         />
-                        <span className="font-medium text-white">{category.name}</span>
+                        <span className="font-medium text-white group-hover:text-blue-300 transition-colors">{category.name}</span>
                       </div>
                       <div className="flex items-center gap-4">
                         <span className="text-gray-400 text-sm">{percentage.toFixed(1)}%</span>
@@ -1358,6 +1379,113 @@ function App() {
           </div>
         )}
 
+        {/* Debt Avalanche Strategy */}
+        {debtAvalancheData.length > 0 && (
+          <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl shadow-2xl border border-gray-700/50 mt-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-semibold flex items-center gap-2">
+                <svg className="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Debt Avalanche Strategy
+              </h3>
+              <span className="text-sm text-gray-400">Pay highest interest rate first</span>
+            </div>
+
+            <div className="bg-gradient-to-r from-red-900/20 to-orange-900/20 border border-red-500/30 rounded-lg p-4 mb-6">
+              <p className="text-gray-300 text-sm">
+                The Debt Avalanche method focuses on paying off debts with the highest interest rates first. This saves you the most money on interest while you work toward becoming debt-free.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {debtAvalancheData.map((debt, index) => (
+                <div key={debt.id} className="bg-gray-700/50 border border-gray-600 rounded-lg p-4 hover:bg-gray-700/70 transition-colors">
+                  <div className="flex items-start justify-between gap-4 mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-red-600 text-white font-bold text-sm">
+                        {debt.priority}
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-white text-lg">{debt.description}</h4>
+                        <p className="text-sm text-gray-400">{debt.category}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-red-400">
+                        {debt.interestRate ? `${debt.interestRate}%` : 'N/A'}
+                      </p>
+                      <p className="text-xs text-gray-400">Interest Rate</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div className="bg-gray-800/50 rounded p-2">
+                      <p className="text-gray-400 text-xs">Balance</p>
+                      <p className="font-semibold text-white">
+                        ${debt.remainingBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div className="bg-gray-800/50 rounded p-2">
+                      <p className="text-gray-400 text-xs">Monthly Interest</p>
+                      <p className="font-semibold text-orange-300">
+                        ${debt.monthlyInterest.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div className="bg-gray-800/50 rounded p-2">
+                      <p className="text-gray-400 text-xs">Monthly Payment</p>
+                      <p className="font-semibold text-blue-300">
+                        ${debt.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div className="bg-gray-800/50 rounded p-2">
+                      <p className="text-gray-400 text-xs">Principal Paid</p>
+                      <p className="font-semibold text-green-300">
+                        ${(debt.amount - debt.monthlyInterest).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 pt-3 border-t border-gray-600">
+                    <button
+                      onClick={() => handleEditTransaction(debt)}
+                      className="text-sm px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      Edit Debt
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-6 pt-6 border-t border-gray-700">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-gradient-to-br from-red-900/30 to-red-800/30 p-4 rounded-lg border border-red-500/30">
+                  <p className="text-gray-300 text-sm mb-1">Total Debt</p>
+                  <p className="text-2xl font-bold text-red-300">
+                    ${debtAvalancheData.reduce((sum, d) => sum + d.remainingBalance, 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div className="bg-gradient-to-br from-orange-900/30 to-orange-800/30 p-4 rounded-lg border border-orange-500/30">
+                  <p className="text-gray-300 text-sm mb-1">Total Monthly Interest</p>
+                  <p className="text-2xl font-bold text-orange-300">
+                    ${debtAvalancheData.reduce((sum, d) => sum + d.monthlyInterest, 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div className="bg-gradient-to-br from-green-900/30 to-green-800/30 p-4 rounded-lg border border-green-500/30">
+                  <p className="text-gray-300 text-sm mb-1">Total Monthly Payment</p>
+                  <p className="text-2xl font-bold text-green-300">
+                    ${debtAvalancheData.reduce((sum, d) => sum + d.amount, 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Transactions Section */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Add Transaction Form */}
@@ -1562,6 +1690,28 @@ function App() {
                         className="w-full h-11 px-4 py-2 bg-gray-900/50 border border-gray-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-gray-500"
                       />
                       <p className="text-xs text-blue-300/70">Enter the day of the month when this bill is due (1-31)</p>
+                    </div>
+
+                    {/* Interest Rate (only show if recurring) */}
+                    <div className="space-y-2 mt-3 pt-3 border-t border-blue-500/30">
+                      <label htmlFor="interestRate" className="text-sm font-medium text-blue-200">
+                        Interest Rate <span className="text-gray-500 text-xs">(Optional - for credit cards/loans)</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          id="interestRate"
+                          type="number"
+                          value={interestRate}
+                          onChange={(e) => setInterestRate(e.target.value)}
+                          placeholder="e.g., 18.5"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          className="w-full h-11 px-4 py-2 bg-gray-900/50 border border-gray-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-gray-500"
+                        />
+                        <span className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400">%</span>
+                      </div>
+                      <p className="text-xs text-blue-300/70">Enter the annual interest rate (APR) for this debt</p>
                     </div>
                   </div>
                 )}
@@ -1863,6 +2013,99 @@ function App() {
                 Update
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Category Details Modal */}
+      {selectedCategory && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-2xl shadow-2xl border border-gray-700 max-w-2xl w-full p-6 animate-in fade-in zoom-in duration-200 max-h-[80vh] overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-white flex items-center gap-2">
+                <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                </svg>
+                {selectedCategory.name}
+              </h3>
+              <button
+                onClick={() => setSelectedCategory(null)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Category Summary */}
+            <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 border border-purple-500/30 rounded-lg p-4 mb-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-300 text-sm">Total Spending</p>
+                  <p className="text-3xl font-bold text-purple-300 mt-1">
+                    ${selectedCategory.value.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-gray-300 text-sm">Number of Items</p>
+                  <p className="text-3xl font-bold text-blue-300 mt-1">{selectedCategory.items.length}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Items List */}
+            <div className="space-y-3 mb-6">
+              {selectedCategory.items.map((item, idx) => (
+                <div key={idx} className="bg-gray-700/50 border border-gray-600 rounded-lg p-4 hover:bg-gray-700/70 transition-colors">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-white text-lg">{item.description}</h4>
+                      <div className="flex flex-wrap gap-3 mt-2 text-sm">
+                        <span className="text-gray-300">
+                          <span className="text-gray-400">Amount:</span> <span className="font-semibold text-blue-300">${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        </span>
+                        {item.isRecurring && (
+                          <span className="text-gray-300">
+                            <span className="text-gray-400">Type:</span> <span className="font-semibold text-yellow-300">🔄 Recurring</span>
+                          </span>
+                        )}
+                        {item.interestRate && (
+                          <span className="text-gray-300">
+                            <span className="text-gray-400">Interest Rate:</span> <span className="font-semibold text-red-300">{item.interestRate}%</span>
+                          </span>
+                        )}
+                        {item.remainingBalance && item.remainingBalance > 0 && (
+                          <span className="text-gray-300">
+                            <span className="text-gray-400">Balance:</span> <span className="font-semibold text-red-300">${item.remainingBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        handleEditTransaction(item)
+                        setSelectedCategory(null)
+                      }}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      Edit
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Close Button */}
+            <button
+              onClick={() => setSelectedCategory(null)}
+              className="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
