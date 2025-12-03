@@ -1636,11 +1636,16 @@ function App() {
                       className="flex justify-between items-center bg-gray-900/50 p-4 rounded-xl border border-gray-700/50 hover:border-gray-600 transition-all group"
                     >
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <p className="text-lg font-medium text-white">{transaction.description}</p>
                           {transaction.isRecurring && (
                             <span className="px-2 py-0.5 bg-yellow-600/30 text-yellow-300 text-xs rounded-md font-medium flex items-center gap-1">
                               🔄 Recurring
+                            </span>
+                          )}
+                          {transaction.dueDate && (
+                            <span className="px-2 py-0.5 bg-blue-600/30 text-blue-300 text-xs rounded-md font-medium flex items-center gap-1">
+                              📅 Due: Day {transaction.dueDate}
                             </span>
                           )}
                         </div>
