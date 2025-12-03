@@ -671,27 +671,29 @@ function App() {
   const handleResetAllBills = async () => {
     if (!userId) return
 
-    const confirmed = window.confirm('Reset all bills to unpaid for this month? This will clear all payment checkmarks.')
-    if (!confirmed) return
+    const nonRecurringTransactions = transactions.filter(t => !t.isRecurring)
 
-    const recurringBills = transactions.filter(t => t.isRecurring && t.type === 'expense')
+    const confirmed = window.confirm(`Reset for new month?\n\n✓ Keep all recurring transactions\n✗ Delete ${nonRecurringTransactions.length} non-recurring transaction(s)\n\nThis action cannot be undone!`)
+    if (!confirmed) return
 
     try {
       if (db) {
         const appId = window.__app_id || import.meta.env.VITE_APP_ID || 'finance-tracker-app'
-        for (const bill of recurringBills) {
-          const transactionRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, bill.id)
-          await updateDoc(transactionRef, { paidDate: null })
+
+        // Delete non-recurring transactions only
+        for (const transaction of nonRecurringTransactions) {
+          const transactionRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, transaction.id)
+          await deleteDoc(transactionRef)
         }
-        console.log('All bills reset')
+
+        console.log('Month reset: non-recurring transactions deleted, recurring transactions kept')
       } else {
-        setTransactions(transactions.map(t =>
-          t.isRecurring && t.type === 'expense' ? { ...t, paidDate: null } : t
-        ))
-        console.log('All bills reset in local state')
+        // Local state update - keep only recurring transactions
+        setTransactions(transactions.filter(t => t.isRecurring))
+        console.log('Month reset in local state')
       }
     } catch (error) {
-      console.error('Error resetting bills:', error)
+      console.error('Error resetting month:', error)
     }
   }
 
