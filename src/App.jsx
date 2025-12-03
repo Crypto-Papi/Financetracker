@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
 import { initializeApp } from 'firebase/app'
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth'
-import { getFirestore, collection, addDoc, serverTimestamp, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc } from 'firebase/firestore'
-import { ResponsiveContainer, PieChart, Pie, Cell, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
+import { getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken } from 'firebase/auth'
+import { addDoc, collection, deleteDoc, doc, getFirestore, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { useEffect, useMemo, useState } from 'react'
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 // Initialize Firebase
 let app, auth, db
@@ -510,11 +510,22 @@ function App() {
           category: cat,
           totalMonthly: 0,
           totalBalance: 0,
+          paidCount: 0,
+          paidAmount: 0,
           items: []
         }
       }
       acc[cat].totalMonthly += t.amount
       acc[cat].totalBalance += t.remainingBalance || 0
+      // Check if paid this month
+      if (t.paidDate) {
+        const paidDate = new Date(t.paidDate)
+        const now = new Date()
+        if (paidDate.getMonth() === now.getMonth() && paidDate.getFullYear() === now.getFullYear()) {
+          acc[cat].paidCount += 1
+          acc[cat].paidAmount += t.amount
+        }
+      }
       acc[cat].items.push(t)
       return acc
     }, {})
@@ -531,6 +542,99 @@ function App() {
       .filter(t => t.remainingBalance && t.remainingBalance > 0)
       .reduce((sum, t) => sum + t.remainingBalance, 0)
   }, [transactions])
+
+  // Payment tracking statistics
+  const paymentStats = useMemo(() => {
+    const now = new Date()
+    const currentMonth = now.getMonth()
+    const currentYear = now.getFullYear()
+
+    const recurringBills = transactions.filter(t => t.isRecurring && t.type === 'expense')
+    const totalBills = recurringBills.length
+
+    const paidBills = recurringBills.filter(t => {
+      if (!t.paidDate) return false
+      const paidDate = new Date(t.paidDate)
+      return paidDate.getMonth() === currentMonth && paidDate.getFullYear() === currentYear
+    })
+
+    const paidCount = paidBills.length
+    const paidAmount = paidBills.reduce((sum, t) => sum + t.amount, 0)
+    const unpaidAmount = totalMonthlyObligations - paidAmount
+    const progressPercent = totalBills > 0 ? (paidCount / totalBills) * 100 : 0
+
+    return {
+      totalBills,
+      paidCount,
+      unpaidCount: totalBills - paidCount,
+      paidAmount,
+      unpaidAmount,
+      progressPercent
+    }
+  }, [transactions, totalMonthlyObligations])
+
+  // Check if a bill is paid this month
+  const isBillPaidThisMonth = (transaction) => {
+    if (!transaction.paidDate) return false
+    const paidDate = new Date(transaction.paidDate)
+    const now = new Date()
+    return paidDate.getMonth() === now.getMonth() && paidDate.getFullYear() === now.getFullYear()
+  }
+
+  // Toggle paid status for a bill
+  const handleTogglePaid = async (transactionId) => {
+    if (!userId) return
+
+    const transaction = transactions.find(t => t.id === transactionId)
+    if (!transaction) return
+
+    const isPaid = isBillPaidThisMonth(transaction)
+    const newPaidDate = isPaid ? null : Date.now()
+
+    try {
+      if (db) {
+        const appId = window.__app_id || import.meta.env.VITE_APP_ID || 'finance-tracker-app'
+        const transactionRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, transactionId)
+        await updateDoc(transactionRef, { paidDate: newPaidDate })
+        console.log('Payment status updated')
+      } else {
+        setTransactions(transactions.map(t =>
+          t.id === transactionId ? { ...t, paidDate: newPaidDate } : t
+        ))
+        console.log('Payment status updated in local state')
+      }
+    } catch (error) {
+      console.error('Error updating payment status:', error)
+    }
+  }
+
+  // Reset all bills for new month
+  const handleResetAllBills = async () => {
+    if (!userId) return
+
+    const confirmed = window.confirm('Reset all bills to unpaid for this month? This will clear all payment checkmarks.')
+    if (!confirmed) return
+
+    const recurringBills = transactions.filter(t => t.isRecurring && t.type === 'expense')
+
+    try {
+      if (db) {
+        const appId = window.__app_id || import.meta.env.VITE_APP_ID || 'finance-tracker-app'
+        for (const bill of recurringBills) {
+          const transactionRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, bill.id)
+          await updateDoc(transactionRef, { paidDate: null })
+        }
+        console.log('All bills reset')
+      } else {
+        setTransactions(transactions.map(t =>
+          t.isRecurring && t.type === 'expense' ? { ...t, paidDate: null } : t
+        ))
+        console.log('All bills reset in local state')
+      }
+    } catch (error) {
+      console.error('Error resetting bills:', error)
+    }
+  }
 
   if (loading) {
     return (
@@ -817,12 +921,63 @@ function App() {
         {/* Monthly Obligations Summary */}
         {recurringObligations.length > 0 && (
           <div className="mb-8">
-            <h2 className="text-3xl font-bold mb-6 flex items-center">
-              <svg className="w-8 h-8 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-              </svg>
-              Monthly Obligations & Debts
-            </h2>
+            {/* Header with Reset Button */}
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+              <h2 className="text-3xl font-bold flex items-center">
+                <svg className="w-8 h-8 mr-3 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+                Monthly Bills Tracker
+              </h2>
+              <button
+                onClick={handleResetAllBills}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white font-medium rounded-lg transition-all flex items-center gap-2 text-sm"
+                title="Reset all bills for new month"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Reset for New Month
+              </button>
+            </div>
+
+            {/* Payment Progress Card */}
+            <div className="bg-gradient-to-r from-gray-800 to-gray-900 p-6 rounded-2xl shadow-2xl border border-gray-700/50 mb-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-white mb-1">
+                    {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} Payment Progress
+                  </h3>
+                  <p className="text-sm text-gray-400">
+                    {paymentStats.paidCount} of {paymentStats.totalBills} bills paid
+                  </p>
+                </div>
+                <div className="flex items-center gap-6">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-green-400">${paymentStats.paidAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                    <p className="text-xs text-gray-400">Paid</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-red-400">${paymentStats.unpaidAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+                    <p className="text-xs text-gray-400">Remaining</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="relative">
+                <div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500 ease-out bg-gradient-to-r from-green-500 to-emerald-400"
+                    style={{ width: `${paymentStats.progressPercent}%` }}
+                  />
+                </div>
+                <div className="flex justify-between mt-2 text-xs text-gray-400">
+                  <span>{paymentStats.progressPercent.toFixed(0)}% Complete</span>
+                  <span>{paymentStats.unpaidCount} bills remaining</span>
+                </div>
+              </div>
+            </div>
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
@@ -832,7 +987,7 @@ function App() {
                 <p className="text-4xl font-bold text-white">
                   ${totalMonthlyObligations.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
-                <p className="text-xs text-yellow-200 mt-2">{recurringObligations.reduce((sum, cat) => sum + cat.items.length, 0)} recurring payments</p>
+                <p className="text-xs text-yellow-200 mt-2">{paymentStats.totalBills} recurring payments</p>
               </div>
 
               {/* Total Debt Balance */}
@@ -854,41 +1009,100 @@ function App() {
               </div>
             </div>
 
-            {/* Obligations by Category */}
+            {/* Bills Checklist by Category */}
             <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl shadow-2xl border border-gray-700/50">
-              <h3 className="text-xl font-semibold mb-4">Recurring Obligations by Category</h3>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-semibold flex items-center gap-2">
+                  <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                  Bills Checklist
+                </h3>
+                <div className="flex items-center gap-4 text-sm">
+                  <span className="flex items-center gap-1 text-green-400">
+                    <span className="w-3 h-3 bg-green-500 rounded-full"></span> Paid
+                  </span>
+                  <span className="flex items-center gap-1 text-gray-400">
+                    <span className="w-3 h-3 bg-gray-600 rounded-full border-2 border-gray-500"></span> Unpaid
+                  </span>
+                </div>
+              </div>
+
               <div className="space-y-4">
                 {recurringObligations.map((cat) => (
-                  <div key={cat.category} className="bg-gray-700/50 p-4 rounded-xl">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="font-semibold text-yellow-300 text-lg">{cat.category}</h4>
+                  <div key={cat.category} className="bg-gray-700/30 p-4 rounded-xl border border-gray-600/30">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <h4 className="font-semibold text-yellow-300 text-lg">{cat.category}</h4>
+                        <span className="text-xs px-2 py-1 bg-gray-600/50 rounded-full text-gray-300">
+                          {cat.paidCount}/{cat.items.length} paid
+                        </span>
+                      </div>
                       <div className="text-right">
-                        <p className="text-2xl font-bold text-white">
+                        <p className="text-xl font-bold text-white">
                           ${cat.totalMonthly.toLocaleString('en-US', { minimumFractionDigits: 2 })}/mo
                         </p>
                         {cat.totalBalance > 0 && (
-                          <p className="text-sm text-red-400">
-                            Balance: ${cat.totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          <p className="text-xs text-red-400">
+                            Debt: ${cat.totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                           </p>
                         )}
                       </div>
                     </div>
+
                     <div className="space-y-2">
-                      {cat.items.map((item) => (
-                        <div key={item.id} className="flex items-center justify-between text-sm bg-gray-800/50 p-2 rounded">
-                          <span className="text-gray-300">{item.description}</span>
-                          <div className="flex items-center gap-4">
-                            <span className="text-white font-medium">
-                              ${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}/mo
-                            </span>
-                            {item.remainingBalance && item.remainingBalance > 0 && (
-                              <span className="text-red-400 text-xs">
-                                ${item.remainingBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} left
+                      {cat.items.map((item) => {
+                        const isPaid = isBillPaidThisMonth(item)
+                        return (
+                          <div
+                            key={item.id}
+                            className={`flex items-center justify-between p-3 rounded-lg transition-all cursor-pointer group
+                              ${isPaid
+                                ? 'bg-green-900/30 border border-green-500/30 hover:bg-green-900/40'
+                                : 'bg-gray-800/50 border border-gray-600/30 hover:bg-gray-700/50 hover:border-yellow-500/30'
+                              }`}
+                            onClick={() => handleTogglePaid(item.id)}
+                          >
+                            <div className="flex items-center gap-3">
+                              {/* Checkbox */}
+                              <div className={`w-6 h-6 rounded-md flex items-center justify-center transition-all
+                                ${isPaid
+                                  ? 'bg-green-500 text-white'
+                                  : 'bg-gray-700 border-2 border-gray-500 group-hover:border-yellow-500'
+                                }`}
+                              >
+                                {isPaid && (
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </div>
+
+                              <div>
+                                <span className={`font-medium ${isPaid ? 'text-green-300 line-through' : 'text-white'}`}>
+                                  {item.description}
+                                </span>
+                                {isPaid && item.paidDate && (
+                                  <p className="text-xs text-green-400/70">
+                                    Paid {new Date(item.paidDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-4">
+                              <span className={`font-bold ${isPaid ? 'text-green-400' : 'text-white'}`}>
+                                ${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                               </span>
-                            )}
+                              {item.remainingBalance && item.remainingBalance > 0 && (
+                                <span className="text-xs text-red-400 bg-red-900/30 px-2 py-1 rounded">
+                                  ${item.remainingBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} owed
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 ))}
