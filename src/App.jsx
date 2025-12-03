@@ -40,6 +40,7 @@ function App() {
   const [category, setCategory] = useState('')
   const [isRecurring, setIsRecurring] = useState(false)
   const [remainingBalance, setRemainingBalance] = useState('')
+  const [dueDate, setDueDate] = useState('')
 
   // Edit mode state
   const [editingId, setEditingId] = useState(null)
@@ -48,6 +49,9 @@ function App() {
   // Debt balance modal state
   const [showDebtModal, setShowDebtModal] = useState(false)
   const [debtModalValue, setDebtModalValue] = useState('')
+
+  // Calendar state
+  const [currentMonth, setCurrentMonth] = useState(new Date())
 
   // Filter transactions based on search and filter
   const filteredTransactions = useMemo(() => {
@@ -315,6 +319,7 @@ function App() {
             category: category.trim() || null,
             isRecurring: isRecurring,
             remainingBalance: remainingBalance ? parseFloat(remainingBalance) : null,
+            dueDate: dueDate ? parseInt(dueDate) : null,
             createdAt: serverTimestamp(),
           })
 
@@ -328,6 +333,7 @@ function App() {
             category: category.trim() || null,
             isRecurring: isRecurring,
             remainingBalance: remainingBalance ? parseFloat(remainingBalance) : null,
+            dueDate: dueDate ? parseInt(dueDate) : null,
             createdAt: Date.now(),
           }
 
@@ -343,6 +349,7 @@ function App() {
       setCategory('')
       setIsRecurring(false)
       setRemainingBalance('')
+      setDueDate('')
       setIsEditing(false)
       setEditingId(null)
     } catch (error) {
@@ -365,6 +372,7 @@ function App() {
           category: category.trim() || null,
           isRecurring: isRecurring,
           remainingBalance: remainingBalance ? parseFloat(remainingBalance) : null,
+          dueDate: dueDate ? parseInt(dueDate) : null,
         })
 
         console.log('Transaction updated successfully')
@@ -379,6 +387,7 @@ function App() {
                 category: category.trim() || null,
                 isRecurring: isRecurring,
                 remainingBalance: remainingBalance ? parseFloat(remainingBalance) : null,
+                dueDate: dueDate ? parseInt(dueDate) : null,
               }
             : t
         ))
@@ -396,6 +405,7 @@ function App() {
     setCategory(transaction.category || '')
     setIsRecurring(transaction.isRecurring || false)
     setRemainingBalance(transaction.remainingBalance ? transaction.remainingBalance.toString() : '')
+    setDueDate(transaction.dueDate ? transaction.dueDate.toString() : '')
     setEditingId(transaction.id)
     setIsEditing(true)
 
@@ -410,6 +420,7 @@ function App() {
     setCategory('')
     setIsRecurring(false)
     setRemainingBalance('')
+    setDueDate('')
     setIsEditing(false)
     setEditingId(null)
   }
@@ -576,6 +587,52 @@ function App() {
       progressPercent
     }
   }, [transactions, totalMonthlyObligations])
+
+  // Calculate bills by due date for calendar
+  const billsByDueDate = useMemo(() => {
+    const billMap = {}
+    const recurringBills = transactions.filter(t => t.isRecurring && t.type === 'expense' && t.dueDate)
+
+    recurringBills.forEach(bill => {
+      const dueDay = parseInt(bill.dueDate)
+      if (!isNaN(dueDay) && dueDay >= 1 && dueDay <= 31) {
+        if (!billMap[dueDay]) {
+          billMap[dueDay] = []
+        }
+        billMap[dueDay].push(bill)
+      }
+    })
+
+    return billMap
+  }, [transactions])
+
+  // Get calendar data for current month
+  const calendarData = useMemo(() => {
+    const year = currentMonth.getFullYear()
+    const month = currentMonth.getMonth()
+    const firstDay = new Date(year, month, 1)
+    const lastDay = new Date(year, month + 1, 0)
+    const daysInMonth = lastDay.getDate()
+    const startingDayOfWeek = firstDay.getDay()
+
+    const days = []
+
+    // Add empty cells for days before month starts
+    for (let i = 0; i < startingDayOfWeek; i++) {
+      days.push(null)
+    }
+
+    // Add days of the month
+    for (let day = 1; day <= daysInMonth; day++) {
+      days.push({
+        day,
+        bills: billsByDueDate[day] || [],
+        totalAmount: (billsByDueDate[day] || []).reduce((sum, bill) => sum + bill.amount, 0)
+      })
+    }
+
+    return days
+  }, [currentMonth, billsByDueDate])
 
   // Check if a bill is paid this month
   const isBillPaidThisMonth = (transaction) => {
@@ -1173,6 +1230,130 @@ function App() {
                 ))}
               </div>
             </div>
+
+            {/* Bills Calendar */}
+            {Object.keys(billsByDueDate).length > 0 && (
+              <div className="bg-gray-800/50 backdrop-blur-sm p-6 rounded-2xl shadow-2xl border border-gray-700/50 mt-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-semibold flex items-center gap-2">
+                    <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Bills Calendar
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
+                      className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <span className="text-sm font-semibold min-w-[150px] text-center">
+                      {currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                    </span>
+                    <button
+                      onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
+                      className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Calendar Grid */}
+                <div className="space-y-4">
+                  {/* Day headers */}
+                  <div className="grid grid-cols-7 gap-2 mb-2">
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                      <div key={day} className="text-center text-xs font-semibold text-gray-400 py-2">
+                        {day}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Calendar days */}
+                  <div className="grid grid-cols-7 gap-2">
+                    {calendarData.map((dayData, index) => {
+                      if (!dayData) {
+                        return <div key={`empty-${index}`} className="aspect-square" />
+                      }
+
+                      const billCount = dayData.bills.length
+                      const isHighActivity = billCount >= 3
+                      const isMediumActivity = billCount === 2
+                      const isLowActivity = billCount === 1
+
+                      return (
+                        <div
+                          key={dayData.day}
+                          className={`aspect-square p-2 rounded-lg border-2 transition-all cursor-pointer group
+                            ${isHighActivity
+                              ? 'bg-red-900/40 border-red-500/60 hover:bg-red-900/60'
+                              : isMediumActivity
+                              ? 'bg-yellow-900/40 border-yellow-500/60 hover:bg-yellow-900/60'
+                              : isLowActivity
+                              ? 'bg-blue-900/40 border-blue-500/60 hover:bg-blue-900/60'
+                              : 'bg-gray-700/30 border-gray-600/30 hover:bg-gray-700/50'
+                            }`}
+                          title={billCount > 0 ? `${billCount} bill${billCount > 1 ? 's' : ''} due` : ''}
+                        >
+                          <div className="flex flex-col h-full">
+                            <span className="text-sm font-bold text-white">{dayData.day}</span>
+                            {billCount > 0 && (
+                              <div className="mt-auto">
+                                <div className="flex flex-wrap gap-1">
+                                  {dayData.bills.slice(0, 2).map((bill, idx) => (
+                                    <div
+                                      key={idx}
+                                      className="text-xs px-1.5 py-0.5 bg-gray-900/60 rounded truncate"
+                                      title={bill.description}
+                                    >
+                                      {bill.description.substring(0, 8)}
+                                    </div>
+                                  ))}
+                                  {billCount > 2 && (
+                                    <div className="text-xs px-1.5 py-0.5 bg-gray-900/60 rounded font-semibold">
+                                      +{billCount - 2}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="text-xs text-gray-300 mt-1 font-semibold">
+                                  ${dayData.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 0 })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Legend */}
+                <div className="flex flex-wrap gap-4 mt-6 pt-6 border-t border-gray-700/50">
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="w-4 h-4 rounded bg-red-900/40 border border-red-500/60"></div>
+                    <span className="text-gray-300">3+ bills</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="w-4 h-4 rounded bg-yellow-900/40 border border-yellow-500/60"></div>
+                    <span className="text-gray-300">2 bills</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="w-4 h-4 rounded bg-blue-900/40 border border-blue-500/60"></div>
+                    <span className="text-gray-300">1 bill</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <div className="w-4 h-4 rounded bg-gray-700/30 border border-gray-600/30"></div>
+                    <span className="text-gray-300">No bills</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1363,6 +1544,24 @@ function App() {
                       />
                     </div>
                     <p className="text-xs text-blue-300/70">Track the total amount you still owe (e.g., car loan balance, credit card balance)</p>
+
+                    {/* Due Date (only show if recurring) */}
+                    <div className="space-y-2 mt-3 pt-3 border-t border-blue-500/30">
+                      <label htmlFor="dueDate" className="text-sm font-medium text-blue-200">
+                        Due Date <span className="text-gray-500 text-xs">(Day of month)</span>
+                      </label>
+                      <input
+                        id="dueDate"
+                        type="number"
+                        value={dueDate}
+                        onChange={(e) => setDueDate(e.target.value)}
+                        placeholder="e.g., 15"
+                        min="1"
+                        max="31"
+                        className="w-full h-11 px-4 py-2 bg-gray-900/50 border border-gray-600 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all hover:border-gray-500"
+                      />
+                      <p className="text-xs text-blue-300/70">Enter the day of the month when this bill is due (1-31)</p>
+                    </div>
                   </div>
                 )}
 
