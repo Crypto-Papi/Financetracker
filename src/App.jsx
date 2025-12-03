@@ -1145,10 +1145,10 @@ function App() {
               {/* Net After Obligations */}
               <div className="bg-gradient-to-br from-purple-600 to-purple-800 p-6 rounded-2xl shadow-2xl border border-purple-500/50">
                 <p className="text-sm font-medium text-purple-100 mb-2">Net After Obligations</p>
-                <p className={`text-4xl font-bold ${(totalIncome - totalExpense - totalMonthlyObligations) >= 0 ? 'text-white' : 'text-red-300'}`}>
-                  ${(totalIncome - totalExpense - totalMonthlyObligations).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <p className={`text-4xl font-bold ${(totalIncome - totalMonthlyObligations) >= 0 ? 'text-white' : 'text-red-300'}`}>
+                  ${(totalIncome - totalMonthlyObligations).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
-                <p className="text-xs text-purple-200 mt-2">Income - Expenses - Obligations</p>
+                <p className="text-xs text-purple-200 mt-2">Income - Recurring Obligations</p>
               </div>
             </div>
 
