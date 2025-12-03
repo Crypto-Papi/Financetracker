@@ -45,6 +45,10 @@ function App() {
   const [editingId, setEditingId] = useState(null)
   const [isEditing, setIsEditing] = useState(false)
 
+  // Debt balance modal state
+  const [showDebtModal, setShowDebtModal] = useState(false)
+  const [debtModalValue, setDebtModalValue] = useState('')
+
   // Filter transactions based on search and filter
   const filteredTransactions = useMemo(() => {
     return transactions.filter(transaction => {
@@ -636,6 +640,56 @@ function App() {
     }
   }
 
+  // Handle debt balance update
+  const handleUpdateDebtBalance = async () => {
+    const newDebtAmount = parseFloat(debtModalValue)
+    if (isNaN(newDebtAmount) || newDebtAmount < 0) {
+      alert('Please enter a valid amount')
+      return
+    }
+
+    const debtTransactions = transactions.filter(t => t.type === 'expense' && t.remainingBalance > 0)
+    if (debtTransactions.length === 0) {
+      alert('No debt transactions found. Please add a debt transaction first.')
+      setShowDebtModal(false)
+      return
+    }
+
+    const currentTotalDebt = debtTransactions.reduce((sum, t) => sum + (t.remainingBalance || 0), 0)
+    const difference = newDebtAmount - currentTotalDebt
+
+    try {
+      if (db) {
+        const appId = window.__app_id || import.meta.env.VITE_APP_ID || 'finance-tracker-app'
+        // Distribute the difference proportionally across all debt transactions
+        for (const transaction of debtTransactions) {
+          const proportion = (transaction.remainingBalance || 0) / currentTotalDebt
+          const newBalance = Math.max(0, (transaction.remainingBalance || 0) + (difference * proportion))
+          const transactionRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, transaction.id)
+          await updateDoc(transactionRef, { remainingBalance: newBalance })
+        }
+        console.log('Debt balance updated')
+      } else {
+        // Update local state
+        const updatedTransactions = transactions.map(t => {
+          if (t.type === 'expense' && t.remainingBalance > 0) {
+            const proportion = (t.remainingBalance || 0) / currentTotalDebt
+            const newBalance = Math.max(0, (t.remainingBalance || 0) + (difference * proportion))
+            return { ...t, remainingBalance: newBalance }
+          }
+          return t
+        })
+        setTransactions(updatedTransactions)
+        console.log('Debt balance updated in local state')
+      }
+      setShowDebtModal(false)
+      setDebtModalValue('')
+    } catch (error) {
+      console.error('Error updating debt balance:', error)
+      alert('Error updating debt balance')
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white flex items-center justify-center">
@@ -991,12 +1045,23 @@ function App() {
               </div>
 
               {/* Total Debt Balance */}
-              <div className="bg-gradient-to-br from-red-600 to-red-800 p-6 rounded-2xl shadow-2xl border border-red-500/50">
-                <p className="text-sm font-medium text-red-100 mb-2">Total Debt Balance</p>
+              <div
+                onClick={() => {
+                  setShowDebtModal(true)
+                  setDebtModalValue(totalDebtBalance.toFixed(2))
+                }}
+                className="bg-gradient-to-br from-red-600 to-red-800 p-6 rounded-2xl shadow-2xl border border-red-500/50 cursor-pointer hover:shadow-red-500/50 hover:scale-105 transition-all duration-200 group"
+              >
+                <p className="text-sm font-medium text-red-100 mb-2 flex items-center gap-2">
+                  Total Debt Balance
+                  <svg className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </p>
                 <p className="text-4xl font-bold text-white">
                   ${totalDebtBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
-                <p className="text-xs text-red-200 mt-2">Outstanding balances</p>
+                <p className="text-xs text-red-200 mt-2">Click to edit • Outstanding balances</p>
               </div>
 
               {/* Net After Obligations */}
@@ -1435,6 +1500,79 @@ function App() {
         </div>
 
       </div>
+
+      {/* Debt Balance Modal */}
+      {showDebtModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-2xl shadow-2xl border border-gray-700 max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-2xl font-bold text-white flex items-center gap-2">
+                <svg className="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Update Total Debt
+              </h3>
+              <button
+                onClick={() => {
+                  setShowDebtModal(false)
+                  setDebtModalValue('')
+                }}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <p className="text-gray-300 mb-4">
+                Enter the new total debt balance. This will proportionally update all your debt transactions.
+              </p>
+              <div className="relative">
+                <span className="absolute left-3 top-3 text-gray-400 text-lg">$</span>
+                <input
+                  type="number"
+                  value={debtModalValue}
+                  onChange={(e) => setDebtModalValue(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg pl-8 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20 text-lg font-semibold"
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handleUpdateDebtBalance()
+                    }
+                  }}
+                  autoFocus
+                />
+              </div>
+              <p className="text-xs text-gray-400 mt-2">
+                Current total: ${totalDebtBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDebtModal(false)
+                  setDebtModalValue('')
+                }}
+                className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateDebtBalance}
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Update
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Custom Scrollbar Styles */}
       <style>{`
