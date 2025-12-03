@@ -408,9 +408,6 @@ function App() {
     setDueDate(transaction.dueDate ? transaction.dueDate.toString() : '')
     setEditingId(transaction.id)
     setIsEditing(true)
-
-    // Scroll to form
-    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const handleCancelEdit = () => {
