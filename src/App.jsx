@@ -1322,7 +1322,7 @@ function App() {
                                   )}
                                 </div>
                                 <div className="text-xs text-gray-300 mt-1 font-semibold">
-                                  ${dayData.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 0 })}
+                                  ${dayData.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                 </div>
                               </div>
                             )}
