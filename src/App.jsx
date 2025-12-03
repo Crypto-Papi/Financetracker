@@ -52,6 +52,7 @@ function App() {
 
   // Calendar state
   const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [selectedDay, setSelectedDay] = useState(null)
 
   // Filter transactions based on search and filter
   const filteredTransactions = useMemo(() => {
@@ -1287,6 +1288,7 @@ function App() {
                       return (
                         <div
                           key={dayData.day}
+                          onClick={() => billCount > 0 && setSelectedDay(dayData)}
                           className={`aspect-square p-2 rounded-lg border-2 transition-all cursor-pointer group
                             ${isHighActivity
                               ? 'bg-red-900/40 border-red-500/60 hover:bg-red-900/60'
@@ -1296,7 +1298,7 @@ function App() {
                               ? 'bg-blue-900/40 border-blue-500/60 hover:bg-blue-900/60'
                               : 'bg-gray-700/30 border-gray-600/30 hover:bg-gray-700/50'
                             }`}
-                          title={billCount > 0 ? `${billCount} bill${billCount > 1 ? 's' : ''} due` : ''}
+                          title={billCount > 0 ? `${billCount} bill${billCount > 1 ? 's' : ''} due - Click to view` : ''}
                         >
                           <div className="flex flex-col h-full">
                             <span className="text-sm font-bold text-white">{dayData.day}</span>
@@ -1696,6 +1698,94 @@ function App() {
         </div>
 
       </div>
+
+      {/* Bills for Selected Day Modal */}
+      {selectedDay && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-2xl shadow-2xl border border-gray-700 max-w-2xl w-full p-6 animate-in fade-in zoom-in duration-200 max-h-[80vh] overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-white flex items-center gap-2">
+                <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                Bills Due on Day {selectedDay.day}
+              </h3>
+              <button
+                onClick={() => setSelectedDay(null)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Bills List */}
+            <div className="space-y-3 mb-6">
+              {selectedDay.bills.map((bill, idx) => (
+                <div key={idx} className="bg-gray-700/50 border border-gray-600 rounded-lg p-4 hover:bg-gray-700/70 transition-colors">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-white text-lg">{bill.description}</h4>
+                      <div className="flex flex-wrap gap-3 mt-2 text-sm">
+                        <span className="text-gray-300">
+                          <span className="text-gray-400">Amount:</span> <span className="font-semibold text-blue-300">${bill.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        </span>
+                        {bill.category && (
+                          <span className="text-gray-300">
+                            <span className="text-gray-400">Category:</span> <span className="font-semibold text-purple-300">{bill.category}</span>
+                          </span>
+                        )}
+                        {bill.remainingBalance && bill.remainingBalance > 0 && (
+                          <span className="text-gray-300">
+                            <span className="text-gray-400">Remaining:</span> <span className="font-semibold text-red-300">${bill.remainingBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        handleEditTransaction(bill)
+                        setSelectedDay(null)
+                      }}
+                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      Edit
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Summary */}
+            <div className="bg-gradient-to-r from-blue-900/30 to-purple-900/30 border border-blue-500/30 rounded-lg p-4 mb-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-gray-300 text-sm">Total Due on Day {selectedDay.day}</p>
+                  <p className="text-3xl font-bold text-blue-300 mt-1">
+                    ${selectedDay.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-gray-300 text-sm">Number of Bills</p>
+                  <p className="text-3xl font-bold text-purple-300 mt-1">{selectedDay.bills.length}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Close Button */}
+            <button
+              onClick={() => setSelectedDay(null)}
+              className="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Debt Balance Modal */}
       {showDebtModal && (
