@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken } from 'firebase/auth'
+import { getAuth, onAuthStateChanged } from 'firebase/auth'
 import { addDoc, collection, deleteDoc, doc, getFirestore, onSnapshot, orderBy, query, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { useEffect, useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -29,6 +29,7 @@ if (firebaseConfig && firebaseConfig.apiKey) {
 function App() {
   const [transactions, setTransactions] = useState([])
   const [userId, setUserId] = useState(null)
+  const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterType, setFilterType] = useState('all')
@@ -198,25 +199,13 @@ function App() {
       return
     }
 
-    const initAuth = async () => {
-      try {
-        if (window.__initial_auth_token) {
-          await signInWithCustomToken(auth, window.__initial_auth_token)
-        } else {
-          await signInAnonymously(auth)
-        }
-      } catch (error) {
-        console.error('Authentication error:', error)
-        setLoading(false)
-      }
-    }
-
-    initAuth()
-
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
+        setUser(user)
         setUserId(user.uid)
+        setLoading(false)
       } else {
+        setUser(null)
         setUserId(null)
         setLoading(false)
       }
@@ -779,6 +768,20 @@ function App() {
     )
   }
 
+  // Show Auth screen if not logged in
+  if (!user) {
+    return <Auth auth={auth} onAuthSuccess={() => {}} />
+  }
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth)
+      setTransactions([])
+    } catch (error) {
+      console.error('Error logging out:', error)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
@@ -790,6 +793,7 @@ function App() {
                 Finance Dashboard
               </h1>
               <p className="text-gray-400">Track your income and expenses with ease</p>
+              <p className="text-sm text-gray-500 mt-2">👤 Logged in as: <span className="text-blue-400">{user?.email}</span></p>
             </div>
 
             {/* Save/Load Buttons */}
@@ -841,6 +845,17 @@ function App() {
                   className="hidden"
                 />
               </label>
+
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-medium rounded-lg transition-all shadow-lg hover:shadow-xl flex items-center gap-2"
+                title="Sign out"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Sign Out
+              </button>
             </div>
           </div>
         </div>
